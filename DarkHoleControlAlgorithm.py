@@ -24,13 +24,62 @@ class DarkHoleControlAlgorithm(simpleServer):
     def __init__(self,
                  name='DarkHoleControlAlgorithm'):
 
-        super().__init__(name)
+        # Initialise the server and register with CCS
+        super().__init__(f"rtdcEvtTestServer_{cam_name}")
+                     
         commands = ['INIT',
                     'SETMODE',
                     'GETSKY',
                     'GETSCIENCE',
                     'STOP']
+        self.status="IDL"
 
+        # Initialise the receive event
+        self.recv_evt = rtdcPy.rtdEVT_RECV(cam_name, debug)
+        self.recv_evt.Init()
+        
+        # Initialise the file descriptor to None
+        self.fd = None
+
+    def Attach(self):
+        """
+        Method to attach the RTD event to the camera and add a reader to the asyncio loop to call a
+        callback on file descriptor updates.
+        """
+        # Attach the receive event to the camera
+        self.recv_evt.Attach(callback=self._RtdEvtCB)
+
+    def _RtdEvtCB(self):
+        """
+        Callback function to read the image from the RTD whenever a full rtdPACKET structure is
+        written to the socket and print it to stdout.
+        """
+        try:
+            # Receive the image information (actually reads from the socket)
+            self.recv_evt.RecvImgInfo()
+
+            # Check that the image is complete
+            if not self.recv_evt.IsCompleted():
+                print("Event not complete\n")
+                return
+
+            # Get the image data and print it to stdout
+            data = self.recv_evt.RecvImg()
+
+            if self.status == "IDL"
+                pass
+            if self.status == "SKY"
+                print("processing SKY")
+                self.event_sky(data)
+            if self.status == "SCIENCE"
+                print("processing SCIENCE")
+                self.event_science(data)
+            
+        except ccs.error as err:
+            # Handle errors
+            stack, _, _ = err.args
+            stack.Close()
+            
     def cbINIT(self):
 
         self._db_p2vm = []  # FIXME: read P2VM here
@@ -59,6 +108,7 @@ class DarkHoleControlAlgorithm(simpleServer):
         self._db_sky = []  # clear cache
         self._db_science = []  # clear cache
         self._db_science_fiber_pos = []  # clear cache
+        self.status= "IDL"
 
         return 'Cleared database'
 
@@ -89,6 +139,7 @@ class DarkHoleControlAlgorithm(simpleServer):
         self.previous_sky_len = len(self._db_sky)
         self.expecting_sky = True
         self._db_sky += []  # FIXME: read sky frames here
+        self.status = "SKY"
 
         pass
 
@@ -100,6 +151,7 @@ class DarkHoleControlAlgorithm(simpleServer):
         self.expecting_science = True
         self._db_science += []  # FIXME: read science frames here
         self._db_science_fiber_pos += []  # FIXME: read fiber position here
+        self.status = "SCIENCE"
 
         # Reduce science data.
         # TODO
@@ -137,3 +189,12 @@ class DarkHoleControlAlgorithm(simpleServer):
         self._db_science = self._db_science[:self.previous_science_len]
 
         pass
+
+
+# Create an instance of the server object with the camera name passed as the first argument to the
+# program
+server = rtdcEvtTestServer(sys.argv[1], False)
+
+# Attach the event to the camera and start the server loop
+server.Attach()
+server.MainLoop()
